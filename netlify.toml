@@ -1,4 +1,4 @@
-[[build]]
+[build]
   name = "flashcards"
   command = "npm run build"
   publish = "Flashcards/build"
