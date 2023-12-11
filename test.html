@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
+    <script src="https://code.highcharts.com/stock/highstock.js"></script>
+    <title>Compare Models</title>
+</head>
+<body>
+    <table class="table-bordered table-hover" style="width: 99%" id="tblDash4" cellspacing="0">
+        <thead>
+            <tr>
+                <th></th>
+                <th ng-if="showTurbineHeader">Turbine (KW)</th>
+                <th ng-if="showSolarHeader">Solar (KW)</th>
+                <th ng-if="showFuelCellHeader">Fuel Cell (KW)</th>
+                <th ng-if="showBatteryHeader">Battery (KW)</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+    <div id="compareModelsChart" style="height: 400px; margin-top: 20px;"></div>
+
+    <script>
+        $.ajax({
+            url: Config.middleLayerUrl + "/api/get_data_by_multiple_sp_id",
+            type: "POST",
+            contentType: "application/json",
+            data: JSON.stringify({
+                subprojectids: mSubProjectsforCharts,
+                fields: ['TimeUTC', 'Turbine_Actual', 'Solar_Actual', 'battery_supply_actual_with_transmission_loss',
+                    'hydrogen_supply_actual_with_transmission_loss', 'natural_gas_supply_actual', 'diesel_supply_actual']
+            }),
+            success: function (response) {
+                console.log(response);
+                processChartData(response);
+            },
+            error: function (error) {
+                console.error("Error fetching data:", error);
+            }
+        });
+
+        function processChartData(data) {
+            var seriesData = [];
+
+            data.forEach(function (item) {
+                var series = processSubProjectData(item);
+                if (series.length > 0) {
+                    seriesData = seriesData.concat(series);
+                }
+            });
+
+            renderHighcharts(seriesData);
+            updateTableValues(data); // Add this line to update the table
+        }
+
+        function processSubProjectData(subProjectData) {
+            var series = [];
+
+            var fields = [
+                { key: 'Turbine_Actual', label: 'Turbine' },
+                { key: 'Solar_Actual', label: 'Solar' },
+                { key: 'battery_supply_actual_with_transmission_loss', label: 'Battery' },
+                { key: 'hydrogen_supply_actual_with_transmission_loss', label: 'Fuel cell' }
+            ];
+
+            fields.forEach(function (field) {
+                var label = field.label + ' for ' + subProjectData.subProjectName.name;
+                var data = subProjectData.mData.map(function (entry) {
+                    return [new Date(entry.TimeUTC).getTime(), entry[field.key]];
+                });
+
+                data = data.filter(function (entry) {
+                    return typeof entry[1] === 'number' && !isNaN(entry[1]) && entry[1] !== 0;
+                });
+
+                if (data.length > 0) {
+                    series.push({ name: label, data: data });
+                }
+            });
+
+            return series;
+        }
+
+        function renderHighcharts(seriesData) {
+            Highcharts.stockChart("compareModelsChart", {
+                chart: {
+                    zoomType: "xy",
+                },
+                title: {
+                    text: "Model Compare",
+                },
+                xAxis: {
+                    type: "datetime",
+                    crosshair: true,
+                },
+                yAxis: {
+                    min: 0,
+                    title: {
+                        text: "Power (kwh)",
+                        offset: 40
+                    },
+                    labels: {
+                        x: 25,
+                    },
+                },
+                legend: {
+                    layout: 'vertical',
+                    align: 'left',
+                    verticalAlign: 'middle',
+                    enabled: true
+                },
+                tooltip: {
+                    headerFormat: '<span style="font-size:10px">{point.key}</span><table>',
+                    pointFormat: '<tr><td style="color:{series.color};padding:0">{series.name}: </td>' +
+                        '<td style="padding:0"><b>{point.y:.1f} kwh</b></td></tr>',
+                    footerFormat: "</table>",
+                    shared: true,
+                    useHTML: true,
+                },
+                plotOptions: {
+                    series: {
+                        turboThreshold: 500000000,
+                        connectNulls: false,
+                        cursor: "pointer",
+                        pointInterval: undefined,
+                        pointStart: undefined,
+                    }
+                },
+                exporting: {
+                    enabled: true,
+                    buttons: {
+                        contextButton: {
+                            menuItems: userGroup == "admin" ? [{
+                                textKey: "printChart",
+                                onclick: function () {
+                                    this.print();
+                                },
+                            }, {
+                                separator: true,
+                            }, {
+                                textKey: "downloadPNG",
+                                onclick: function () {
+                                    this.exportChart();
+                                },
+                            }, {
+                                textKey: "downloadJPEG",
+                                onclick: function () {
+                                    this.exportChart({
+                                        type: "image/jpeg",
+                                    });
+                                },
+                            }, {
+                                separator: true,
+                            }, {
+                                textKey: "downloadPDF",
+                                onclick: function () {
+                                    this.exportChart({
+                                        type: "application/pdf",
+                                    });
+                                },  }, {
+                                textKey: "downloadSVG",
+                                onclick: function () {
+                                    this.exportChart({
+                                        type: "image/svg+xml",
+                                    });
+                                },
+                            }, {
+                                separator: true,
+                            }, {
+                                textKey: "downloadCSV",
+                                onclick: function () {
+                                    this.downloadCSV();
+                                },
+                            }, {
+                                textKey: "downloadXLS",
+                                onclick: function () {
+                                    this.downloadXLS();
+                                },
+                            }, {
+                                textKey: "viewData",
+                                onclick: function () {
+                                    this.viewData();
+                                    jQuery("#dataTableModal").modal("show");
+                                    const dataTable = jQuery(".highcharts-data-table").html();
+                                    jQuery("#dataTableBody").html(dataTable);
+                                },
+                            }, ] : [{
+                                textKey: "printChart",
+                                onclick: function () {
+                                    this.print();
+                                },
+                            }, {
+                                separator: true,
+                            }, {
+                                textKey: "downloadPNG",
+                                onclick: function () {
+                                    this.exportChart();
+                                },
+                            }, {
+                                textKey: "downloadJPEG",
+                                onclick: function () {
+                                    this.exportChart({
+                                        type: "image/jpeg",
+                                    });
+                                },
+                            }, {
+                                separator: true,
+                            }, {
+                                textKey: "downloadPDF",
+                                onclick: function () {
+                                    this.exportChart({
+                                        type: "application/pdf",
+                                    });
+                                },
+                            }, {
+                                textKey: "downloadSVG",
+                                onclick: function () {
+                                    this.exportChart({
+                                        type: "image/svg+xml",
+                                    });
+                                },
+                            }, {
+                                separator: true,
+                            }, {
+                                textKey: "viewData",
+                                onclick: function () {
+                                    this.viewData();
+                                    jQuery("#dataTableModal").modal("show");
+                                    const dataTable = jQuery(".highcharts-data-table").html();
+                                    jQuery("#dataTableBody").html(dataTable);
+                                },
+                            }, ],
+                        },
+                    },
+                },
+                rangeSelector: {
+                    allButtonsEnabled: true,
+                    buttons: [{
+                            type: "hour",
+                            count: 1,
+                            text: "Hourly",
+                        },
+                        {
+                            type: "day",
+                            count: 1,
+                            text: "Daily",
+                        },
+                        {
+                            type: "week",
+                            count: 1,
+                            text: "Weekly",
+                        },
+                        {
+                            type: "month",
+                            count: 1,
+                            text: "Monthly",
+                        },
+                        {
+                            type: "month",
+                            count: 3,
+                            text: "Quarterly",
+                        },
+                        {
+                            type: "year",
+                            count: 1,
+                            text: "Yearly",
+                        },
+                        {
+                            type: "all",
+                            text: "All",
+                        },
+                    ],
+                    buttonTheme: {
+                        width: 60,
+                    },
+                    selected: 6,
+                    events: {
+                        afterSetExtremes: function (event) {
+                            updateTableValues(data, event.min, event.max);
+                        }
+                    },
+                },
+                series: seriesData,
+                responsive: {
+                    rules: [{
+                        condition: {
+                            maxWidth: 500,
+                        },
+                        chartOptions: {
+                            legend: {
+                                layout: 'vertical',
+                                align: 'left',
+                                verticalAlign: 'middle',
+                                enabled: true
+                            },
+                            yAxis: [{
+                                    labels: {
+                                        align: "right",
+                                        x: 0,
+                                        y: -6,
+                                    },
+                                    showLastLabel: false,
+                                },
+                                {
+                                    labels: {
+                                        align: "left",
+                                        x: 0,
+                                        y: -12,
+                                    },
+                                    showLastLabel: false,
+                                },
+                                {
+                                    visible: false,
+                                },
+                            ],
+                        },
+                    }, ],
+                },
+            });
+        }
+
+        function updateTableValues(data, min, max) {
+            data.forEach(function (item, index) {
+                var filteredData = item.mData.filter(function (subItem) {
+                    var timestamp = new Date(subItem.TimeUTC).getTime();
+                    return timestamp >= min && timestamp <= max;
+                });
+
+                updateHtmlTable(filteredData, index);
+            });
+        }
+
+        function updateHtmlTable(tableData, rowIndex) {
+            var rowId = 'compareModelsTableRow_' + rowIndex;
+            $('#' + rowId).remove();
+            $('#tblDash4 tbody').append('<tr id="' + rowId + '"></tr>');
+            $('#' + rowId).append('<td class="compareStatistics-lcoe-value">' + data[rowIndex].subProjectName.name + '</td>');
+            tableData.forEach(function (subItem) {
+                $('#' + rowId).append('<td>' + (subItem.Turbine_Actual ? subItem.Turbine_Actual.toFixed(2) : '0.00') + '</td>');
+                $('#' + rowId).append('<td>' + (subItem.Solar_Actual ? subItem.Solar_Actual.toFixed(2) : '0.00') + '</td>');
+                $('#' + rowId).append('<td>' + (subItem.hydrogen_supply_actual_with_transmission_loss ? subItem.hydrogen_supply_actual_with_transmission_loss.toFixed(2) : '0.00') + '</td>');
+                $('#' + rowId).append('<td>' + (subItem.battery_supply_actual_with_transmission_loss ? subItem.battery_supply_actual_with_transmission_loss.toFixed(2) : '0.00') + '</td>');
+            });
+        }
+    </script>
+</body>
+</html>
